@@ -28,8 +28,8 @@ outerIgnored:
 			if u == i {
 				continue outerIgnored
 			}
-			users = append(users, u)
 		}
+		users = append(users, u)
 	}
 
 	log.Println("INFO: Getting printers for:", strings.Join(users, ", "))
