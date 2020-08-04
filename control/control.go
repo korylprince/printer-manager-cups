@@ -99,7 +99,7 @@ func New() (*Listener, error) {
 		return nil, fmt.Errorf("Unable to remove old socket: %v", err)
 	}
 
-	l, err := net.Listen("unixpacket", sock)
+	l, err := net.Listen("unix", sock)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to listen on %s: %v", sock, err)
 	}
@@ -132,7 +132,7 @@ func Do(p *Packet) (*Packet, error) {
 		return nil, fmt.Errorf("Unable to get socket: %v", err)
 	}
 
-	conn, err := net.Dial("unixpacket", sock)
+	conn, err := net.Dial("unix", sock)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to dial %s: %v", sock, err)
 	}
