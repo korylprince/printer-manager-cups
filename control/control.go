@@ -95,7 +95,7 @@ func New() (*Listener, error) {
 		return nil, fmt.Errorf("Unable to get socket: %v", err)
 	}
 
-	if err := os.Remove(sock); err != nil {
+	if err := os.Remove(sock); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("Unable to remove old socket: %v", err)
 	}
 
