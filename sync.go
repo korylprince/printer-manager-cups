@@ -84,7 +84,7 @@ outerIgnored:
 				continue
 			}
 			// skip error printers
-			if _, ok := errPrinters[cp.ID]; ok {
+			if _, ok := errPrinters[p.ID]; ok {
 				continue
 			}
 			// skip if doesn't match
