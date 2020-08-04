@@ -1,0 +1,4 @@
+*.swp
+*.pyc
+printer-manager-cups
+cmd/printer-manager/printer-manager
