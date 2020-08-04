@@ -15,9 +15,21 @@ import (
 func Sync(config *Config) error {
 	log.Println("INFO: Starting sync")
 	// get users
-	users, err := user.GetUsers()
+	allUsers, err := user.GetUsers()
 	if err != nil {
 		return fmt.Errorf("Unable to get users: %v", err)
+	}
+
+	// filter ignored users
+	var users []string
+outerIgnored:
+	for _, u := range allUsers {
+		for _, i := range config.IgnoreUsers {
+			if u == i {
+				continue outerIgnored
+			}
+			users = append(users, u)
+		}
 	}
 
 	log.Println("INFO: Getting printers for:", strings.Join(users, ", "))
