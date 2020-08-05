@@ -19,6 +19,8 @@ var CertSearchPaths = []string{"/etc/cups/certs/0", "/run/cups/certs/0"}
 
 const requestRetryLimit = 3
 
+var certNotFoundError = errors.New("Unable to locate CUPS certificate")
+
 //GetCert returns the current CUPs authentication certificate by searching CertSearchPaths
 func GetCert() (string, error) {
 	for _, path := range CertSearchPaths {
@@ -40,7 +42,7 @@ func GetCert() (string, error) {
 		return buf.String(), nil
 	}
 
-	return "", errors.New("Unable to locate CUPS certificate")
+	return "", certNotFoundError
 }
 
 //DoRequest performs the given IPP request to the given URL, returning the IPP response or an error if one occurred
@@ -64,8 +66,9 @@ func DoRequest(r *ipp.Request, url string) (*ipp.Response, error) {
 			return nil, fmt.Errorf("Unable to create HTTP request: %v", err)
 		}
 
+		// if cert isn't found, do a request to generate it
 		cert, err := GetCert()
-		if err != nil {
+		if err != nil && err != certNotFoundError {
 			return nil, err
 		}
 
