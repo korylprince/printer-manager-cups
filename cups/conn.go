@@ -2,9 +2,11 @@ package cups
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
@@ -15,11 +17,34 @@ import (
 
 var ServerURL = "http://localhost:631/admin"
 
-var CertSearchPaths = []string{"/etc/cups/certs/0", "/run/cups/certs/0"}
-
 const requestRetryLimit = 3
 
+var SocketSearchPaths = []string{"/var/run/cupsd", "/var/run/cups/cups.sock", "/run/cups/cups.sock"}
+var CertSearchPaths = []string{"/etc/cups/certs/0", "/run/cups/certs/0"}
+
+var socketNotFoundError = errors.New("Unable to locate CUPS socket")
 var certNotFoundError = errors.New("Unable to locate CUPS certificate")
+
+//GetSocket returns the path to the cupsd socket by searching SocketSearchPaths
+func GetSocket() (string, error) {
+	for _, path := range SocketSearchPaths {
+		fi, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			} else if os.IsPermission(err) {
+				return "", errors.New("Unable to access socket: Access denied")
+			}
+			return "", fmt.Errorf("Unable to access socket: %v", err)
+		}
+
+		if fi.Mode()&os.ModeSocket != 0 {
+			return path, nil
+		}
+	}
+
+	return "", socketNotFoundError
+}
 
 //GetCert returns the current CUPs authentication certificate by searching CertSearchPaths
 func GetCert() (string, error) {
@@ -66,6 +91,11 @@ func DoRequest(r *ipp.Request, url string) (*ipp.Response, error) {
 			return nil, fmt.Errorf("Unable to create HTTP request: %v", err)
 		}
 
+		sock, err := GetSocket()
+		if err != nil {
+			return nil, err
+		}
+
 		// if cert isn't found, do a request to generate it
 		cert, err := GetCert()
 		if err != nil && err != certNotFoundError {
@@ -76,8 +106,16 @@ func DoRequest(r *ipp.Request, url string) (*ipp.Response, error) {
 		req.Header.Set("Content-Type", ipp.ContentTypeIPP)
 		req.Header.Set("Authorization", fmt.Sprintf("Local %s", cert))
 
+		unixClient := http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("unix", sock)
+				},
+			},
+		}
+
 		// send request
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := unixClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("Unable to perform HTTP request: %v", err)
 		}
