@@ -20,11 +20,17 @@ func main() {
 		log.Fatalln("ERROR: Unable to set up control socket:", err)
 	}
 
-	input := make(chan struct{})
+	inputSync := make(chan struct{})
+	inputClearCache := make(chan struct{})
 	output := make(chan string)
 
 	con.Register(control.PacketTypeSync, func(p *control.Packet) *control.Packet {
-		input <- struct{}{}
+		inputSync <- struct{}{}
+		return &control.Packet{Type: control.PacketTypeResponse, Message: <-output}
+	})
+
+	con.Register(control.PacketTypeClearCache, func(p *control.Packet) *control.Packet {
+		inputClearCache <- struct{}{}
 		return &control.Packet{Type: control.PacketTypeResponse, Message: <-output}
 	})
 
@@ -34,7 +40,7 @@ func main() {
 
 	for {
 		select {
-		case <-input:
+		case <-inputSync:
 			log.Println("INFO: Sync command received. Running sync")
 			if err := Sync(c); err != nil {
 				log.Println("WARN: Sync failed:", err)
@@ -42,6 +48,14 @@ func main() {
 				break
 			}
 			output <- "Sync completed successfully"
+		case <-inputClearCache:
+			log.Println("INFO: ClearCache command received. Clearing cache")
+			if err := ClearCache(c); err != nil {
+				log.Println("WARN: Clearing cache failed:", err)
+				output <- fmt.Sprintf("Clearing cache failed: %v", err)
+				break
+			}
+			output <- "Cache cleared successfully"
 		case <-t.C:
 			if err := Sync(c); err != nil {
 				log.Println("WARN: Sync failed:", err)

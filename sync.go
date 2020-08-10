@@ -165,3 +165,46 @@ outerExpired:
 	log.Println("INFO: Sync completed successfully")
 	return nil
 }
+
+func ClearCache(config *Config) error {
+	log.Println("INFO: Clearing cached printers")
+	// cache api printer ids
+	pCache, err := cache.Read(config.CachePath)
+	if err != nil {
+		return fmt.Errorf("Unable to read cache: %v", err)
+	}
+
+	// get cups printers
+	cupsPrinters, err := cups.GetPrinters()
+	if err != nil {
+		return fmt.Errorf("Unable to update cache: %v", err)
+	}
+
+	log.Println("INFO: Got", len(cupsPrinters), "printers from CUPS")
+
+	// delete expired printers
+	var deleted []string
+outerExpired:
+	for id := range pCache {
+		for _, cp := range cupsPrinters {
+			if id == cp.ID {
+				if err = cp.Delete(); err != nil {
+					log.Printf("WARN: Unable to delete expired printer %s (%s): %v\n", cp.ID, cp.Hostname, err)
+					continue outerExpired
+				}
+				log.Printf("INFO: Deleted expired printer %s (%s)\n", cp.ID, cp.Hostname)
+				break
+			}
+		}
+		// printer deleted successfully or not found
+		deleted = append(deleted, id)
+	}
+
+	// purge expired printers from cache
+	if err = cache.Purge(config.CachePath, deleted); err != nil {
+		log.Println("WARN: Unable to purge cache:", err)
+	}
+
+	log.Println("INFO: Cache cleared successfully")
+	return nil
+}

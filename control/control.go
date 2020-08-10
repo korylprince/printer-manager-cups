@@ -20,6 +20,7 @@ var SearchPaths = []string{"/var/run", "/run"}
 const (
 	PacketTypeSync PacketType = iota
 	PacketTypeResponse
+	PacketTypeClearCache
 )
 
 //Packet represents a control packet
