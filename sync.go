@@ -71,7 +71,7 @@ outerIgnored:
 	// get cups printers
 	cupsPrinters, err := cups.GetPrinters()
 	if err != nil {
-		return fmt.Errorf("Unable to update cache: %v", err)
+		return fmt.Errorf("Unable to get CUPS printers: %v", err)
 	}
 
 	log.Println("INFO: Got", len(cupsPrinters), "printers from CUPS")
@@ -177,7 +177,7 @@ func ClearCache(config *Config) error {
 	// get cups printers
 	cupsPrinters, err := cups.GetPrinters()
 	if err != nil {
-		return fmt.Errorf("Unable to update cache: %v", err)
+		return fmt.Errorf("Unable to get CUPS printers: %v", err)
 	}
 
 	log.Println("INFO: Got", len(cupsPrinters), "printers from CUPS")
