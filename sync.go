@@ -12,7 +12,7 @@ import (
 	"github.com/korylprince/printer-manager-cups/user"
 )
 
-func Sync(config *Config) error {
+func Sync(config *Config, usernames []string) error {
 	log.Println("INFO: Starting sync")
 	// get users
 	allUsers, err := user.GetUsers()
@@ -29,6 +29,10 @@ outerIgnored:
 				continue outerIgnored
 			}
 		}
+		users = append(users, u)
+	}
+
+	for _, u := range usernames {
 		users = append(users, u)
 	}
 

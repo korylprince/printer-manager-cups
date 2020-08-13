@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -20,12 +21,21 @@ func main() {
 		log.Fatalln("ERROR: Unable to set up control socket:", err)
 	}
 
-	inputSync := make(chan struct{})
+	inputSync := make(chan []string)
 	inputClearCache := make(chan struct{})
 	output := make(chan string)
 
 	con.Register(control.PacketTypeSync, func(p *control.Packet) *control.Packet {
-		inputSync <- struct{}{}
+		users := make([]string, 0)
+		if p.Message == "" {
+			inputSync <- nil
+		} else {
+			if err = json.Unmarshal([]byte(p.Message), &users); err != nil {
+				log.Println("WARN: Unable to unmarshal users:", err)
+				return &control.Packet{Type: control.PacketTypeResponse, Message: fmt.Sprintf("Unable to unmarshal users: %v", err)}
+			}
+			inputSync <- users
+		}
 		return &control.Packet{Type: control.PacketTypeResponse, Message: <-output}
 	})
 
@@ -40,9 +50,9 @@ func main() {
 
 	for {
 		select {
-		case <-inputSync:
+		case users := <-inputSync:
 			log.Println("INFO: Sync command received. Running sync")
-			if err := Sync(c); err != nil {
+			if err := Sync(c, users); err != nil {
 				log.Println("WARN: Sync failed:", err)
 				output <- fmt.Sprintf("Sync failed: %v", err)
 				break
@@ -57,7 +67,7 @@ func main() {
 			}
 			output <- "Cache cleared successfully"
 		case <-t.C:
-			if err := Sync(c); err != nil {
+			if err := Sync(c, nil); err != nil {
 				log.Println("WARN: Sync failed:", err)
 			}
 		}
