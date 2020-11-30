@@ -36,6 +36,13 @@ outerIgnored:
 		users = append(users, u)
 	}
 
+	// force usernames to lowercase
+	if config.IgnoreUserCase {
+		for i, u := range users {
+			users[i] = strings.ToLower(u)
+		}
+	}
+
 	log.Println("INFO: Getting printers for:", strings.Join(users, ", "))
 
 	// get api printers
