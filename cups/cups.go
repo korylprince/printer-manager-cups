@@ -5,17 +5,39 @@ import (
 	"fmt"
 	"math/rand"
 	"os/exec"
+	"os/user"
 
 	"github.com/phin1x/go-ipp"
 )
 
+//Client is a CUPS client that connects over unix sockets
+type Client struct {
+	client  *ipp.IPPClient
+	adapter ipp.Adapter
+}
+
+//New returns a new client or an error if one occurred
+func New() (*Client, error) {
+	// set user field
+	user, err := user.Current()
+	if err != nil {
+		return nil, fmt.Errorf("Unable to lookup current user: %v", err)
+	}
+	adapter := ipp.NewSocketAdapter("localhost:631", false)
+	return &Client{client: ipp.NewIPPClientWithAdapter(user.Username, adapter), adapter: adapter}, nil
+}
+
+func (c *Client) adminURL() string {
+	return c.adapter.GetHttpUri("admin", "")
+}
+
 var cachedPPDs map[string]string = nil
 
 //GetPPDs returns the a mapping of make-and-model to name for all PPDs installed or an error if one occurred
-func GetPPDs() (map[string]string, error) {
+func (c *Client) GetPPDs() (map[string]string, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetPPDs, rand.Int31())
 	r.OperationAttributes["requested-attributes"] = []string{"ppd-make-and-model", "ppd-name"}
-	resp, err := DoRequest(r, "http://localhost:631")
+	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -33,12 +55,12 @@ func GetPPDs() (map[string]string, error) {
 	return ppds, err
 }
 
-func getCachedPPDs() (map[string]string, error) {
+func (c *Client) getCachedPPDs() (map[string]string, error) {
 	if cachedPPDs != nil {
 		return cachedPPDs, nil
 	}
 
-	ppds, err := GetPPDs()
+	ppds, err := c.GetPPDs()
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +70,10 @@ func getCachedPPDs() (map[string]string, error) {
 }
 
 //GetDefault returns the id of the default Printer or an error if one occurred
-func GetDefault() (string, error) {
+func (c *Client) GetDefault() (string, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetDefault, rand.Int31())
 	r.OperationAttributes["requested-attributes"] = []string{"printer-name"}
-	resp, err := DoRequest(r, "http://localhost:631")
+	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
 		return "", err
 	}
@@ -86,10 +108,10 @@ type Printer struct {
 }
 
 //GetPrinters returns all the installed Printers or an error if one occurred
-func GetPrinters() ([]*Printer, error) {
+func (c *Client) GetPrinters() ([]*Printer, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetPrinters, rand.Int31())
 	r.OperationAttributes["requested-attributes"] = []string{"printer-name", "device-uri", "printer-info", "printer-location"}
-	resp, err := DoRequest(r, "http://localhost:631")
+	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +145,9 @@ func GetPrinters() ([]*Printer, error) {
 }
 
 //AddOrModify creates or updates the Printer or returns an error if one occurred
-func (p *Printer) AddOrModify() error {
+func (c *Client) AddOrModify(p *Printer) error {
 	//find first matching PPD
-	ppds, err := getCachedPPDs()
+	ppds, err := c.getCachedPPDs()
 	if err != nil {
 		return fmt.Errorf("Unable to get PPDs: %v", err)
 	}
@@ -143,14 +165,14 @@ func (p *Printer) AddOrModify() error {
 	}
 
 	r := ipp.NewRequest(ipp.OperationCupsAddModifyPrinter, rand.Int31())
-	r.OperationAttributes["printer-uri"] = fmt.Sprintf("ipp://localhost/printers/%s", p.ID)
+	r.OperationAttributes["printer-uri"] = c.adapter.GetHttpUri("printers", p.ID)
 	r.OperationAttributes["device-uri"] = fmt.Sprintf(p.URITemplate, p.Hostname)
 	r.OperationAttributes["ppd-name"] = ppd
 	r.OperationAttributes["printer-info"] = p.Name
 	r.OperationAttributes["printer-location"] = p.Location
 	r.OperationAttributes["printer-is-accepting-jobs"] = true
 	r.OperationAttributes["printer-state"] = ipp.PrinterStateIdle
-	if _, err := DoRequest(r, ServerURL); err != nil {
+	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
 		return fmt.Errorf("Unable to add or modify printer: %v", err)
 	}
 
@@ -172,17 +194,17 @@ func (p *Printer) AddOrModify() error {
 }
 
 //Delete deletes the Printer or returns an error if one occurred
-func (p *Printer) Delete() error {
+func (c *Client) Delete(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsDeletePrinter, rand.Int31())
-	r.OperationAttributes["printer-uri"] = fmt.Sprintf("ipp://localhost/printers/%s", p.ID)
-	_, err := DoRequest(r, ServerURL)
+	r.OperationAttributes["printer-uri"] = c.adapter.GetHttpUri("printers", p.ID)
+	_, err := c.client.SendRequest(c.adminURL(), r, nil)
 	return err
 }
 
 //SetDefault sets the Printer as default or returns an error if one occurred
-func (p *Printer) SetDefault() error {
+func (c *Client) SetDefault(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsSetDefault, rand.Int31())
-	r.OperationAttributes["printer-uri"] = fmt.Sprintf("ipp://localhost/printers/%s", p.ID)
-	_, err := DoRequest(r, ServerURL)
+	r.OperationAttributes["printer-uri"] = c.adapter.GetHttpUri("printers", p.ID)
+	_, err := c.client.SendRequest(c.adminURL(), r, nil)
 	return err
 }

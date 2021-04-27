@@ -8,12 +8,18 @@ import (
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/korylprince/printer-manager-cups/control"
+	"github.com/korylprince/printer-manager-cups/cups"
 )
 
 func main() {
 	c := new(Config)
 	if err := envconfig.Process("", c); err != nil {
 		log.Fatalln("ERROR: Unable to process configuration:", err)
+	}
+
+	client, err := cups.New()
+	if err != nil {
+		log.Fatalln("ERROR: Unable to create CUPS client:", err)
 	}
 
 	con, err := control.New()
@@ -52,7 +58,7 @@ func main() {
 		select {
 		case users := <-inputSync:
 			log.Println("INFO: Sync command received. Running sync")
-			if err := Sync(c, users); err != nil {
+			if err := Sync(c, client, users); err != nil {
 				log.Println("WARN: Sync failed:", err)
 				output <- fmt.Sprintf("Sync failed: %v", err)
 				break
@@ -60,14 +66,14 @@ func main() {
 			output <- "Sync completed successfully"
 		case <-inputClearCache:
 			log.Println("INFO: ClearCache command received. Clearing cache")
-			if err := ClearCache(c); err != nil {
+			if err := ClearCache(c, client); err != nil {
 				log.Println("WARN: Clearing cache failed:", err)
 				output <- fmt.Sprintf("Clearing cache failed: %v", err)
 				break
 			}
 			output <- "Cache cleared successfully"
 		case <-t.C:
-			if err := Sync(c, nil); err != nil {
+			if err := Sync(c, client, nil); err != nil {
 				log.Println("WARN: Sync failed:", err)
 			}
 		}

@@ -12,7 +12,7 @@ import (
 	"github.com/korylprince/printer-manager-cups/user"
 )
 
-func Sync(config *Config, usernames []string) error {
+func Sync(config *Config, client *cups.Client, usernames []string) error {
 	log.Println("INFO: Starting sync")
 	// get users
 	allUsers, err := user.GetUsers()
@@ -71,7 +71,7 @@ outerIgnored:
 
 	// sync api printers to cups
 	for _, p := range printers {
-		if err = p.AddOrModify(); err != nil {
+		if err = client.AddOrModify(p); err != nil {
 			log.Printf("WARN: Unable to add or modify printer %s (%s): %v\n", p.ID, p.Hostname, err)
 			errPrinters[p.ID] = p
 			continue
@@ -80,7 +80,7 @@ outerIgnored:
 	}
 
 	// get cups printers
-	cupsPrinters, err := cups.GetPrinters()
+	cupsPrinters, err := client.GetPrinters()
 	if err != nil {
 		if !strings.Contains(err.Error(), "No destinations added.") {
 			return fmt.Errorf("Unable to get CUPS printers: %v", err)
@@ -105,7 +105,7 @@ outerIgnored:
 				continue
 			}
 
-			if err = cp.Delete(); err != nil {
+			if err = client.Delete(cp); err != nil {
 				log.Printf("WARN: Unable to remove matched printer %s: %v\n", cp.ID, err)
 				continue
 			}
@@ -123,7 +123,7 @@ outerExpired:
 
 		for _, cp := range cupsPrinters {
 			if id == cp.ID {
-				if err = cp.Delete(); err != nil {
+				if err = client.Delete(cp); err != nil {
 					log.Printf("WARN: Unable to delete expired printer %s (%s): %v\n", cp.ID, cp.Hostname, err)
 					continue outerExpired
 				}
@@ -136,7 +136,7 @@ outerExpired:
 	}
 
 	// get default printer
-	cupsDefault, err := cups.GetDefault()
+	cupsDefault, err := client.GetDefault()
 	if err != nil {
 		log.Println("WARN: Unable to get default printer:", err)
 	}
@@ -163,7 +163,7 @@ outerExpired:
 
 	// set default printer
 	if def != nil && def.ID != cupsDefault {
-		if err = def.SetDefault(); err != nil {
+		if err = client.SetDefault(def); err != nil {
 			log.Printf("WARN: Unable to set default printer to %s (%s): %v\n", def.ID, def.Hostname, err)
 		} else {
 			log.Printf("INFO: Set default printer to %s (%s)\n", def.ID, def.Hostname)
@@ -179,7 +179,7 @@ outerExpired:
 	return nil
 }
 
-func ClearCache(config *Config) error {
+func ClearCache(config *Config, client *cups.Client) error {
 	log.Println("INFO: Clearing cached printers")
 	// cache api printer ids
 	pCache, err := cache.Read(config.CachePath)
@@ -188,7 +188,7 @@ func ClearCache(config *Config) error {
 	}
 
 	// get cups printers
-	cupsPrinters, err := cups.GetPrinters()
+	cupsPrinters, err := client.GetPrinters()
 	if err != nil {
 		if !strings.Contains(err.Error(), "No destinations added.") {
 			return fmt.Errorf("Unable to get CUPS printers: %v", err)
@@ -203,7 +203,7 @@ outerExpired:
 	for id := range pCache {
 		for _, cp := range cupsPrinters {
 			if id == cp.ID {
-				if err = cp.Delete(); err != nil {
+				if err = client.Delete(cp); err != nil {
 					log.Printf("WARN: Unable to delete expired printer %s (%s): %v\n", cp.ID, cp.Hostname, err)
 					continue outerExpired
 				}
