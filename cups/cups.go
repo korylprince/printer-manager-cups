@@ -36,7 +36,7 @@ var cachedPPDs map[string]string = nil
 //GetPPDs returns the a mapping of make-and-model to name for all PPDs installed or an error if one occurred
 func (c *Client) GetPPDs() (map[string]string, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetPPDs, rand.Int31())
-	r.OperationAttributes["requested-attributes"] = []string{"ppd-make-and-model", "ppd-name"}
+	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterMakeAndModel, ipp.AttributePPDName}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
 		return nil, err
@@ -45,8 +45,8 @@ func (c *Client) GetPPDs() (map[string]string, error) {
 	ppds := make(map[string]string)
 
 	for _, a := range resp.PrinterAttributes {
-		if val := a["ppd-make-and-model"]; len(val) == 1 {
-			if val2 := a["ppd-name"]; len(val2) == 1 {
+		if val := a[ipp.AttributePrinterMakeAndModel]; len(val) == 1 {
+			if val2 := a[ipp.AttributePPDName]; len(val2) == 1 {
 				ppds[(val[0].Value).(string)] = (val2[0].Value).(string)
 			}
 		}
@@ -72,7 +72,7 @@ func (c *Client) getCachedPPDs() (map[string]string, error) {
 //GetDefault returns the id of the default Printer or an error if one occurred
 func (c *Client) GetDefault() (string, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetDefault, rand.Int31())
-	r.OperationAttributes["requested-attributes"] = []string{"printer-name"}
+	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
 		return "", err
@@ -82,7 +82,7 @@ func (c *Client) GetDefault() (string, error) {
 		return "", errors.New("Server did not return a default printer")
 	}
 
-	return (resp.PrinterAttributes[0]["printer-name"][0].Value).(string), nil
+	return (resp.PrinterAttributes[0][ipp.AttributePrinterName][0].Value).(string), nil
 }
 
 //CUPS hold CUPS-specific driver options
@@ -110,7 +110,7 @@ type Printer struct {
 //GetPrinters returns all the installed Printers or an error if one occurred
 func (c *Client) GetPrinters() ([]*Printer, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetPrinters, rand.Int31())
-	r.OperationAttributes["requested-attributes"] = []string{"printer-name", "device-uri", "printer-info", "printer-location"}
+	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName, ipp.AttributeDeviceURI, ipp.AttributePrinterInfo, ipp.AttributePrinterLocation}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
 		return nil, err
@@ -121,20 +121,20 @@ func (c *Client) GetPrinters() ([]*Printer, error) {
 	for _, a := range resp.PrinterAttributes {
 		p := new(Printer)
 
-		if val := a["printer-name"]; len(val) == 1 {
+		if val := a[ipp.AttributePrinterName]; len(val) == 1 {
 			p.ID = (val[0].Value).(string)
 		}
 
 		// we're returning full URI here instead of trying to parse out hostname
-		if val := a["device-uri"]; len(val) == 1 {
+		if val := a[ipp.AttributeDeviceURI]; len(val) == 1 {
 			p.Hostname = (val[0].Value).(string)
 		}
 
-		if val := a["printer-info"]; len(val) == 1 {
+		if val := a[ipp.AttributePrinterInfo]; len(val) == 1 {
 			p.Name = (val[0].Value).(string)
 		}
 
-		if val := a["printer-location"]; len(val) == 1 {
+		if val := a[ipp.AttributePrinterLocation]; len(val) == 1 {
 			p.Location = (val[0].Value).(string)
 		}
 
@@ -165,13 +165,13 @@ func (c *Client) AddOrModify(p *Printer) error {
 	}
 
 	r := ipp.NewRequest(ipp.OperationCupsAddModifyPrinter, rand.Int31())
-	r.OperationAttributes["printer-uri"] = c.adapter.GetHttpUri("printers", p.ID)
-	r.OperationAttributes["device-uri"] = fmt.Sprintf(p.URITemplate, p.Hostname)
-	r.OperationAttributes["ppd-name"] = ppd
-	r.OperationAttributes["printer-info"] = p.Name
-	r.OperationAttributes["printer-location"] = p.Location
-	r.OperationAttributes["printer-is-accepting-jobs"] = true
-	r.OperationAttributes["printer-state"] = ipp.PrinterStateIdle
+	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
+	r.OperationAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
+	r.OperationAttributes[ipp.AttributePPDName] = ppd
+	r.OperationAttributes[ipp.AttributePrinterInfo] = p.Name
+	r.OperationAttributes[ipp.AttributePrinterLocation] = p.Location
+	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
+	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
 	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
 		return fmt.Errorf("Unable to add or modify printer: %v", err)
 	}
@@ -196,7 +196,7 @@ func (c *Client) AddOrModify(p *Printer) error {
 //Delete deletes the Printer or returns an error if one occurred
 func (c *Client) Delete(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsDeletePrinter, rand.Int31())
-	r.OperationAttributes["printer-uri"] = c.adapter.GetHttpUri("printers", p.ID)
+	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	_, err := c.client.SendRequest(c.adminURL(), r, nil)
 	return err
 }
@@ -204,7 +204,7 @@ func (c *Client) Delete(p *Printer) error {
 //SetDefault sets the Printer as default or returns an error if one occurred
 func (c *Client) SetDefault(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsSetDefault, rand.Int31())
-	r.OperationAttributes["printer-uri"] = c.adapter.GetHttpUri("printers", p.ID)
+	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	_, err := c.client.SendRequest(c.adminURL(), r, nil)
 	return err
 }
