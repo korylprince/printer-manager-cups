@@ -11,11 +11,12 @@ func _() {
 	_ = x[PacketTypeSync-0]
 	_ = x[PacketTypeResponse-1]
 	_ = x[PacketTypeClearCache-2]
+	_ = x[PacketTypeListDrivers-3]
 }
 
-const _PacketType_name = "PacketTypeSyncPacketTypeResponsePacketTypeClearCache"
+const _PacketType_name = "PacketTypeSyncPacketTypeResponsePacketTypeClearCachePacketTypeListDrivers"
 
-var _PacketType_index = [...]uint8{0, 14, 32, 52}
+var _PacketType_index = [...]uint8{0, 14, 32, 52, 73}
 
 func (i PacketType) String() string {
 	if i < 0 || i >= PacketType(len(_PacketType_index)-1) {

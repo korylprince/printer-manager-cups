@@ -19,12 +19,11 @@ func DoCommand(pkt *control.Packet) {
 		}
 		os.Exit(1)
 	}
-
-	fmt.Println("Server returned:", resp.Message)
+	fmt.Println(resp.Message)
 }
 
 func usage() {
-	fmt.Printf("Usage: %s [command]:\nCommands:\n\tsync [usernames...]\tsyncs printers, optionally including usernames\n\tclear-cache\t\tclears printer cache\n", os.Args[0])
+	fmt.Printf("Usage: %s [command]:\nCommands:\n\tsync [usernames...]\tsyncs printers, optionally including usernames\n\tclear-cache\t\tclears printer cache\n\tlist-drivers\t\tlists drivers found by CUPS\n", os.Args[0])
 	os.Exit(1)
 }
 
@@ -41,13 +40,19 @@ func main() {
 				fmt.Println("Unable to marshal users:", err)
 				os.Exit(1)
 			}
+			fmt.Print("Server returned: ")
 			DoCommand(&control.Packet{Type: control.PacketTypeSync, Message: string(b)})
 		} else {
+			fmt.Print("Server returned: ")
 			DoCommand(&control.Packet{Type: control.PacketTypeSync})
 		}
 	case "clear-cache":
+		fmt.Print("Server returned: ")
 		DoCommand(&control.Packet{Type: control.PacketTypeClearCache})
 		fmt.Println("You will probably want to run the sync command now")
+	case "list-drivers":
+		fmt.Println("Server returned:")
+		DoCommand(&control.Packet{Type: control.PacketTypeListDrivers})
 	default:
 		fmt.Println("Unknown command:", os.Args[1])
 		usage()

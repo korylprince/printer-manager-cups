@@ -29,6 +29,7 @@ func main() {
 
 	inputSync := make(chan []string)
 	inputClearCache := make(chan struct{})
+	inputListDrivers := make(chan struct{})
 	output := make(chan string)
 
 	con.Register(control.PacketTypeSync, func(p *control.Packet) *control.Packet {
@@ -47,6 +48,11 @@ func main() {
 
 	con.Register(control.PacketTypeClearCache, func(p *control.Packet) *control.Packet {
 		inputClearCache <- struct{}{}
+		return &control.Packet{Type: control.PacketTypeResponse, Message: <-output}
+	})
+
+	con.Register(control.PacketTypeListDrivers, func(p *control.Packet) *control.Packet {
+		inputListDrivers <- struct{}{}
 		return &control.Packet{Type: control.PacketTypeResponse, Message: <-output}
 	})
 
@@ -72,6 +78,21 @@ func main() {
 				break
 			}
 			output <- "Cache cleared successfully"
+		case <-inputListDrivers:
+			log.Println("INFO: ListDrivers command received. Querying CUPS")
+			drivers, err := client.GetPPDs()
+			if err != nil {
+				log.Println("WARN: Querying CUPS failed:", err)
+				output <- fmt.Sprintf("Querying CUPS failed: %v", err)
+				break
+			}
+			buf, err := json.MarshalIndent(drivers, "", "\t")
+			if err != nil {
+				log.Println("WARN: Marshalling drivers failed:", err)
+				output <- fmt.Sprintf("Marshalling drivers failed: %v", err)
+				break
+			}
+			output <- string(buf)
 		case <-t.C:
 			if err := Sync(c, client, nil); err != nil {
 				log.Println("WARN: Sync failed:", err)

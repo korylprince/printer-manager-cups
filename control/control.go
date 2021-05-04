@@ -21,6 +21,7 @@ const (
 	PacketTypeSync PacketType = iota
 	PacketTypeResponse
 	PacketTypeClearCache
+	PacketTypeListDrivers
 )
 
 //Packet represents a control packet
