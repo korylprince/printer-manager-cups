@@ -94,20 +94,20 @@ func (l *Listener) worker() {
 func New() (*Listener, error) {
 	sock, err := GetSocket()
 	if err != nil {
-		return nil, fmt.Errorf("Unable to get socket: %v", err)
+		return nil, fmt.Errorf("Unable to get socket: %w", err)
 	}
 
 	if err := os.Remove(sock); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("Unable to remove old socket: %v", err)
+		return nil, fmt.Errorf("Unable to remove old socket: %w", err)
 	}
 
 	l, err := net.Listen("unix", sock)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to listen on %s: %v", sock, err)
+		return nil, fmt.Errorf("Unable to listen on %s: %w", sock, err)
 	}
 
 	if err = os.Chmod(sock, 0777); err != nil {
-		return nil, fmt.Errorf("Unable to set permissions for socket: %v", err)
+		return nil, fmt.Errorf("Unable to set permissions for socket: %w", err)
 	}
 
 	lis := &Listener{Socket: sock,
@@ -131,29 +131,29 @@ func (l *Listener) Register(t PacketType, handler func(p *Packet) *Packet) {
 func Do(p *Packet) (*Packet, error) {
 	sock, err := GetSocket()
 	if err != nil {
-		return nil, fmt.Errorf("Unable to get socket: %v", err)
+		return nil, fmt.Errorf("Unable to get socket: %w", err)
 	}
 
 	conn, err := net.Dial("unix", sock)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to dial %s: %v", sock, err)
+		return nil, fmt.Errorf("Unable to dial %s: %w", sock, err)
 	}
 
 	e := json.NewEncoder(conn)
 	if err = e.Encode(p); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("Unable to encode packet: %v", err)
+		return nil, fmt.Errorf("Unable to encode packet: %w", err)
 	}
 
 	resp := new(Packet)
 	d := json.NewDecoder(conn)
 	if err = d.Decode(resp); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("Unable to decode response: %v", err)
+		return nil, fmt.Errorf("Unable to decode response: %w", err)
 	}
 
 	if err = conn.Close(); err != nil {
-		return nil, fmt.Errorf("Error closing conn: %v", err)
+		return nil, fmt.Errorf("Error closing conn: %w", err)
 	}
 
 	return resp, nil

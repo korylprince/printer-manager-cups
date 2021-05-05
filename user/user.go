@@ -52,7 +52,7 @@ func readUtmp(path string) ([]string, error) {
 		if os.IsNotExist(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("Unable to open path %s: %v", path, err)
+		return nil, fmt.Errorf("Unable to open path %s: %w", path, err)
 	}
 	defer f.Close()
 
@@ -60,10 +60,10 @@ func readUtmp(path string) ([]string, error) {
 	for {
 		u := new(utmp)
 		if err := binary.Read(f, binary.LittleEndian, u); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, fmt.Errorf("Unable to read: %v", err)
+			return nil, fmt.Errorf("Unable to read: %w", err)
 		}
 		if u.Type == typeUser {
 			end := bytes.IndexByte(u.Name[:], 0)
@@ -80,7 +80,7 @@ func readUtmpx(path string) ([]string, error) {
 		if os.IsNotExist(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("Unable to open path %s: %v", path, err)
+		return nil, fmt.Errorf("Unable to open path %s: %w", path, err)
 	}
 	defer f.Close()
 
@@ -88,10 +88,10 @@ func readUtmpx(path string) ([]string, error) {
 	for {
 		u := new(utmpx)
 		if err := binary.Read(f, binary.LittleEndian, u); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, fmt.Errorf("Unable to read: %v", err)
+			return nil, fmt.Errorf("Unable to read: %w", err)
 		}
 		if u.Type == typeUser {
 			end := bytes.IndexByte(u.Name[:], 0)

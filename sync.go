@@ -17,7 +17,7 @@ func Sync(config *Config, client *cups.Client, usernames []string) error {
 	// get users
 	allUsers, err := user.GetUsers()
 	if err != nil {
-		return fmt.Errorf("Unable to get users: %v", err)
+		return fmt.Errorf("Unable to get users: %w", err)
 	}
 
 	// filter ignored users
@@ -32,9 +32,7 @@ outerIgnored:
 		users = append(users, u)
 	}
 
-	for _, u := range usernames {
-		users = append(users, u)
-	}
+	users = append(users, usernames...)
 
 	// force usernames to lowercase
 	if config.IgnoreUserCase {
@@ -48,7 +46,7 @@ outerIgnored:
 	// get api printers
 	printers, err := httpapi.GetPrinters(config.APIBase, users)
 	if err != nil {
-		return fmt.Errorf("Unable to get API printers: %v", err)
+		return fmt.Errorf("Unable to get API printers: %w", err)
 	}
 
 	log.Println("INFO: Got", len(printers), "printers from API")
@@ -56,7 +54,7 @@ outerIgnored:
 	// cache api printer ids
 	pCache, err := cache.Read(config.CachePath)
 	if err != nil {
-		return fmt.Errorf("Unable to read cache: %v", err)
+		return fmt.Errorf("Unable to read cache: %w", err)
 	}
 
 	for _, p := range printers {
@@ -64,7 +62,7 @@ outerIgnored:
 	}
 
 	if err = pCache.Write(config.CachePath); err != nil {
-		return fmt.Errorf("Unable to update cache: %v", err)
+		return fmt.Errorf("Unable to update cache: %w", err)
 	}
 
 	errPrinters := make(map[string]*cups.Printer)
@@ -83,7 +81,7 @@ outerIgnored:
 	cupsPrinters, err := client.GetPrinters()
 	if err != nil {
 		if !strings.Contains(err.Error(), "No destinations added.") {
-			return fmt.Errorf("Unable to get CUPS printers: %v", err)
+			return fmt.Errorf("Unable to get CUPS printers: %w", err)
 		}
 	}
 
@@ -184,14 +182,14 @@ func ClearCache(config *Config, client *cups.Client) error {
 	// cache api printer ids
 	pCache, err := cache.Read(config.CachePath)
 	if err != nil {
-		return fmt.Errorf("Unable to read cache: %v", err)
+		return fmt.Errorf("Unable to read cache: %w", err)
 	}
 
 	// get cups printers
 	cupsPrinters, err := client.GetPrinters()
 	if err != nil {
 		if !strings.Contains(err.Error(), "No destinations added.") {
-			return fmt.Errorf("Unable to get CUPS printers: %v", err)
+			return fmt.Errorf("Unable to get CUPS printers: %w", err)
 		}
 	}
 

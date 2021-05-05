@@ -14,7 +14,7 @@ type Cache map[string]time.Time
 func Read(path string) (Cache, error) {
 	db, err := badger.Open(badger.DefaultOptions(path).WithLogger(nil))
 	if err != nil {
-		return nil, fmt.Errorf("Unable to open db: %v", err)
+		return nil, fmt.Errorf("Unable to open db: %w", err)
 	}
 	defer db.Close()
 
@@ -29,7 +29,7 @@ func Read(path string) (Cache, error) {
 				t := new(time.Time)
 				err := t.UnmarshalBinary(v)
 				if err != nil {
-					return fmt.Errorf("Unable to unmarshal time: %v", err)
+					return fmt.Errorf("Unable to unmarshal time: %w", err)
 				}
 				cache[string(item.Key())] = *t
 				return nil
@@ -39,7 +39,7 @@ func Read(path string) (Cache, error) {
 		}
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("Unable to read iterate through database: %v", err)
+		return nil, fmt.Errorf("Unable to read iterate through database: %w", err)
 	}
 
 	return cache, nil
@@ -49,46 +49,38 @@ func Read(path string) (Cache, error) {
 func (cache Cache) Write(path string) error {
 	db, err := badger.Open(badger.DefaultOptions(path).WithLogger(nil))
 	if err != nil {
-		return fmt.Errorf("Unable to open db: %v", err)
+		return fmt.Errorf("Unable to open db: %w", err)
 	}
 	defer db.Close()
 
-	if err := db.Update(func(txn *badger.Txn) error {
+	return db.Update(func(txn *badger.Txn) error {
 		for id, t := range cache {
 			tb, err := t.MarshalBinary()
 			if err != nil {
-				return fmt.Errorf("Unable to marshal time: %v", err)
+				return fmt.Errorf("Unable to marshal time: %w", err)
 			}
 			if err := txn.Set([]byte(id), tb); err != nil {
-				return fmt.Errorf("Unable to write to cache: %v", err)
+				return fmt.Errorf("Unable to write to cache: %w", err)
 			}
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
 }
 
 //Purge removes the given ids from the cache at the given path, or returns an error if one occurred
 func Purge(path string, ids []string) error {
 	db, err := badger.Open(badger.DefaultOptions(path).WithLogger(nil))
 	if err != nil {
-		return fmt.Errorf("Unable to open db: %v", err)
+		return fmt.Errorf("Unable to open db: %w", err)
 	}
 	defer db.Close()
 
-	if err := db.Update(func(txn *badger.Txn) error {
+	return db.Update(func(txn *badger.Txn) error {
 		for _, id := range ids {
 			if err := txn.Delete([]byte(id)); err != nil {
-				return fmt.Errorf("Unable to delete key: %v", err)
+				return fmt.Errorf("Unable to delete key: %w", err)
 			}
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
 }

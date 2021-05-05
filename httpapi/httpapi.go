@@ -16,7 +16,7 @@ func GetPrinters(apiBase string, usernames []string) ([]*cups.Printer, error) {
 	for _, username := range usernames {
 		resp, err := http.Get(apiBase + fmt.Sprintf(apiPath, username))
 		if err != nil {
-			return nil, fmt.Errorf("Unable to query printers: %v", err)
+			return nil, fmt.Errorf("Unable to query printers: %w", err)
 		}
 
 		if resp.StatusCode == http.StatusNotFound {
@@ -29,7 +29,7 @@ func GetPrinters(apiBase string, usernames []string) ([]*cups.Printer, error) {
 		d := json.NewDecoder(resp.Body)
 		if err := d.Decode(&printers); err != nil {
 			resp.Body.Close()
-			return nil, fmt.Errorf("Unable to decode response: %v", err)
+			return nil, fmt.Errorf("Unable to decode response: %w", err)
 		}
 
 		resp.Body.Close()

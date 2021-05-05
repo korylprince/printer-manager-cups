@@ -27,7 +27,7 @@ func New() (*Client, error) {
 	// set user field
 	user, err := user.Current()
 	if err != nil {
-		return nil, fmt.Errorf("Unable to lookup current user: %v", err)
+		return nil, fmt.Errorf("Unable to lookup current user: %w", err)
 	}
 	adapter := ipp.NewSocketAdapter("localhost:631", false)
 	return &Client{
@@ -46,7 +46,7 @@ func (c *Client) getPPDs() (map[string]string, error) {
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterMakeAndModel, ipp.AttributePPDName}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Unable to complete IPP request: %w", err)
 	}
 
 	ppds := make(map[string]string)
@@ -59,7 +59,7 @@ func (c *Client) getPPDs() (map[string]string, error) {
 		}
 	}
 
-	return ppds, err
+	return ppds, nil
 }
 
 //GetPPDs returns the a mapping of make-and-model to name for all PPDs installed or an error if one occurred
@@ -84,7 +84,7 @@ func (c *Client) GetDefault() (string, error) {
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Unable to complete IPP request: %w", err)
 	}
 
 	if len(resp.PrinterAttributes) != 1 {
@@ -122,7 +122,7 @@ func (c *Client) GetPrinters() ([]*Printer, error) {
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName, ipp.AttributeDeviceURI, ipp.AttributePrinterInfo, ipp.AttributePrinterLocation}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Unable to complete IPP request: %w", err)
 	}
 
 	printers := make([]*Printer, 0, len(resp.PrinterAttributes))
@@ -150,7 +150,7 @@ func (c *Client) GetPrinters() ([]*Printer, error) {
 		printers = append(printers, p)
 	}
 
-	return printers, err
+	return printers, nil
 }
 
 //AddOrModify creates or updates the Printer or returns an error if one occurred
@@ -158,7 +158,7 @@ func (c *Client) AddOrModify(p *Printer) error {
 	//find first matching PPD
 	ppds, err := c.GetPPDs()
 	if err != nil {
-		return fmt.Errorf("Unable to get PPDs: %v", err)
+		return fmt.Errorf("Unable to get PPDs: %w", err)
 	}
 
 	ppd := ""
@@ -182,7 +182,7 @@ func (c *Client) AddOrModify(p *Printer) error {
 	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
 	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
 	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
-		return fmt.Errorf("Unable to add or modify printer: %v", err)
+		return fmt.Errorf("Unable to add or modify printer: %w", err)
 	}
 
 	if len(p.Options) == 0 {
@@ -196,7 +196,7 @@ func (c *Client) AddOrModify(p *Printer) error {
 	}
 	cmd := exec.Command("lpadmin", options...)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Unable to set printer options: %v", err)
+		return fmt.Errorf("Unable to set printer options: %w", err)
 	}
 
 	return nil
@@ -207,7 +207,10 @@ func (c *Client) Delete(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsDeletePrinter, rand.Int31())
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	_, err := c.client.SendRequest(c.adminURL(), r, nil)
-	return err
+	if err != nil {
+		return fmt.Errorf("Unable to complete IPP request: %w", err)
+	}
+	return nil
 }
 
 //SetDefault sets the Printer as default or returns an error if one occurred
@@ -215,7 +218,10 @@ func (c *Client) SetDefault(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsSetDefault, rand.Int31())
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	_, err := c.client.SendRequest(c.adminURL(), r, nil)
-	return err
+	if err != nil {
+		return fmt.Errorf("Unable to complete IPP request: %w", err)
+	}
+	return nil
 }
 
 //ClearCache clears the clients PPD cache
