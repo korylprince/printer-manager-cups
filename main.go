@@ -77,6 +77,7 @@ func main() {
 				output <- fmt.Sprintf("Clearing cache failed: %v", err)
 				break
 			}
+			client.ClearCache()
 			output <- "Cache cleared successfully"
 		case <-inputListDrivers:
 			log.Println("INFO: ListDrivers command received. Querying CUPS")

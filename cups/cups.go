@@ -6,14 +6,20 @@ import (
 	"math/rand"
 	"os/exec"
 	"os/user"
+	"time"
 
 	"github.com/phin1x/go-ipp"
 )
 
+const DefaultCacheTimeout = time.Minute * 5
+
 //Client is a CUPS client that connects over unix sockets
 type Client struct {
-	client  *ipp.IPPClient
-	adapter ipp.Adapter
+	client       *ipp.IPPClient
+	adapter      ipp.Adapter
+	CacheTimeout time.Duration
+	cache        map[string]string
+	cacheTime    time.Time
 }
 
 //New returns a new client or an error if one occurred
@@ -24,17 +30,18 @@ func New() (*Client, error) {
 		return nil, fmt.Errorf("Unable to lookup current user: %v", err)
 	}
 	adapter := ipp.NewSocketAdapter("localhost:631", false)
-	return &Client{client: ipp.NewIPPClientWithAdapter(user.Username, adapter), adapter: adapter}, nil
+	return &Client{
+		client:       ipp.NewIPPClientWithAdapter(user.Username, adapter),
+		adapter:      adapter,
+		CacheTimeout: DefaultCacheTimeout,
+	}, nil
 }
 
 func (c *Client) adminURL() string {
 	return c.adapter.GetHttpUri("admin", "")
 }
 
-var cachedPPDs map[string]string = nil
-
-//GetPPDs returns the a mapping of make-and-model to name for all PPDs installed or an error if one occurred
-func (c *Client) GetPPDs() (map[string]string, error) {
+func (c *Client) getPPDs() (map[string]string, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetPPDs, rand.Int31())
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterMakeAndModel, ipp.AttributePPDName}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
@@ -55,17 +62,19 @@ func (c *Client) GetPPDs() (map[string]string, error) {
 	return ppds, err
 }
 
-func (c *Client) getCachedPPDs() (map[string]string, error) {
-	if cachedPPDs != nil {
-		return cachedPPDs, nil
+//GetPPDs returns the a mapping of make-and-model to name for all PPDs installed or an error if one occurred
+func (c *Client) GetPPDs() (map[string]string, error) {
+	if c.cache != nil && time.Since(c.cacheTime) < c.CacheTimeout {
+		return c.cache, nil
 	}
 
-	ppds, err := c.GetPPDs()
+	ppds, err := c.getPPDs()
 	if err != nil {
 		return nil, err
 	}
 
-	cachedPPDs = ppds
+	c.cache = ppds
+	c.cacheTime = time.Now()
 	return ppds, nil
 }
 
@@ -147,7 +156,7 @@ func (c *Client) GetPrinters() ([]*Printer, error) {
 //AddOrModify creates or updates the Printer or returns an error if one occurred
 func (c *Client) AddOrModify(p *Printer) error {
 	//find first matching PPD
-	ppds, err := c.getCachedPPDs()
+	ppds, err := c.GetPPDs()
 	if err != nil {
 		return fmt.Errorf("Unable to get PPDs: %v", err)
 	}
@@ -207,4 +216,9 @@ func (c *Client) SetDefault(p *Printer) error {
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	_, err := c.client.SendRequest(c.adminURL(), r, nil)
 	return err
+}
+
+//ClearCache clears the clients PPD cache
+func (c *Client) ClearCache() {
+	c.cache = nil
 }
