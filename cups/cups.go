@@ -100,6 +100,10 @@ type CUPS struct {
 	URITemplate     string            `json:"uri_template"`
 	DefaultPriority int               `json:"default_priority"`
 	Options         map[string]string `json:"options"`
+	Override        struct {
+		Name     string `json:"name"`
+		Location string `json:"location"`
+	} `json:"override"`
 }
 
 //Driver hold driver options
@@ -114,6 +118,20 @@ type Printer struct {
 	Name     string `json:"name"`
 	Location string `json:"location"`
 	*Driver  `json:"driver"`
+}
+
+func (p *Printer) GetName() string {
+	if p.Driver != nil && p.Driver.CUPS != nil && p.Driver.CUPS.Override.Name != "" {
+		return p.Driver.CUPS.Override.Name
+	}
+	return p.Name
+}
+
+func (p *Printer) GetLocation() string {
+	if p.Driver != nil && p.Driver.CUPS != nil && p.Driver.CUPS.Override.Location != "" {
+		return p.Driver.CUPS.Override.Location
+	}
+	return p.Location
 }
 
 //GetPrinters returns all the installed Printers or an error if one occurred
@@ -177,8 +195,8 @@ func (c *Client) AddOrModify(p *Printer) error {
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	r.OperationAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
 	r.OperationAttributes[ipp.AttributePPDName] = ppd
-	r.OperationAttributes[ipp.AttributePrinterInfo] = p.Name
-	r.OperationAttributes[ipp.AttributePrinterLocation] = p.Location
+	r.OperationAttributes[ipp.AttributePrinterInfo] = p.GetName()
+	r.OperationAttributes[ipp.AttributePrinterLocation] = p.GetLocation()
 	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
 	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
 	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
