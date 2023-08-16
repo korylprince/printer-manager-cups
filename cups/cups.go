@@ -173,6 +173,10 @@ func (c *Client) GetPrinters() ([]*Printer, error) {
 
 //AddOrModify creates or updates the Printer or returns an error if one occurred
 func (c *Client) AddOrModify(p *Printer) error {
+	// skip misconfigured drivers
+	if p.Driver == nil || p.Driver.CUPS == nil {
+		return errors.New("Missing driver configuration")
+	}
 	//find first matching PPD
 	ppds, err := c.GetPPDs()
 	if err != nil {
