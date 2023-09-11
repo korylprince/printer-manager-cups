@@ -13,7 +13,9 @@ import (
 
 const DefaultCacheTimeout = time.Minute * 5
 
-//Client is a CUPS client that connects over unix sockets
+const EverywhereDriver = "everywhere"
+
+// Client is a CUPS client that connects over unix sockets
 type Client struct {
 	client       *ipp.IPPClient
 	adapter      ipp.Adapter
@@ -22,7 +24,7 @@ type Client struct {
 	cacheTime    time.Time
 }
 
-//New returns a new client or an error if one occurred
+// New returns a new client or an error if one occurred
 func New() (*Client, error) {
 	// set user field
 	user, err := user.Current()
@@ -62,7 +64,7 @@ func (c *Client) getPPDs() (map[string]string, error) {
 	return ppds, nil
 }
 
-//GetPPDs returns the a mapping of make-and-model to name for all PPDs installed or an error if one occurred
+// GetPPDs returns the a mapping of make-and-model to name for all PPDs installed or an error if one occurred
 func (c *Client) GetPPDs() (map[string]string, error) {
 	if c.cache != nil && time.Since(c.cacheTime) < c.CacheTimeout {
 		return c.cache, nil
@@ -78,7 +80,7 @@ func (c *Client) GetPPDs() (map[string]string, error) {
 	return ppds, nil
 }
 
-//GetDefault returns the id of the default Printer or an error if one occurred
+// GetDefault returns the id of the default Printer or an error if one occurred
 func (c *Client) GetDefault() (string, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetDefault, rand.Int31())
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName}
@@ -94,7 +96,7 @@ func (c *Client) GetDefault() (string, error) {
 	return (resp.PrinterAttributes[0][ipp.AttributePrinterName][0].Value).(string), nil
 }
 
-//CUPS hold CUPS-specific driver options
+// CUPS hold CUPS-specific driver options
 type CUPS struct {
 	DriverName      []string          `json:"driver_name"`
 	URITemplate     string            `json:"uri_template"`
@@ -106,12 +108,12 @@ type CUPS struct {
 	} `json:"override"`
 }
 
-//Driver hold driver options
+// Driver hold driver options
 type Driver struct {
 	*CUPS `json:"cups"`
 }
 
-//Printer represents a CUPs printer
+// Printer represents a CUPs printer
 type Printer struct {
 	ID       string `json:"id"`
 	Hostname string `json:"hostname"`
@@ -134,7 +136,7 @@ func (p *Printer) GetLocation() string {
 	return p.Location
 }
 
-//GetPrinters returns all the installed Printers or an error if one occurred
+// GetPrinters returns all the installed Printers or an error if one occurred
 func (c *Client) GetPrinters() ([]*Printer, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetPrinters, rand.Int31())
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName, ipp.AttributeDeviceURI, ipp.AttributePrinterInfo, ipp.AttributePrinterLocation}
@@ -171,7 +173,7 @@ func (c *Client) GetPrinters() ([]*Printer, error) {
 	return printers, nil
 }
 
-//AddOrModify creates or updates the Printer or returns an error if one occurred
+// AddOrModify creates or updates the Printer or returns an error if one occurred
 func (c *Client) AddOrModify(p *Printer) error {
 	// skip misconfigured drivers
 	if p.Driver == nil || p.Driver.CUPS == nil {
@@ -184,25 +186,40 @@ func (c *Client) AddOrModify(p *Printer) error {
 	}
 
 	ppd := ""
+	var everywhere bool
 	for _, p := range p.DriverName {
 		if name, ok := ppds[p]; ok {
 			ppd = name
 			break
+		} else if p == EverywhereDriver {
+			everywhere = true
 		}
 	}
 
 	if ppd == "" {
-		return errors.New("No matching PPDs found")
+		// only create IPP Everywhere printer if no PPDs are found
+		if everywhere {
+			if err := c.CreateIPPEverywhere(p); err != nil {
+				return fmt.Errorf("could not create IPP Everywhere printer: %w", err)
+			}
+		} else {
+			return errors.New("No matching PPDs found")
+		}
 	}
 
 	r := ipp.NewRequest(ipp.OperationCupsAddModifyPrinter, rand.Int31())
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	r.OperationAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
-	r.OperationAttributes[ipp.AttributePPDName] = ppd
+	if ppd != "" {
+		r.OperationAttributes[ipp.AttributePPDName] = ppd
+	}
 	r.OperationAttributes[ipp.AttributePrinterInfo] = p.GetName()
 	r.OperationAttributes[ipp.AttributePrinterLocation] = p.GetLocation()
 	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
 	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
+	// FIXME: update once https://github.com/phin1x/go-ipp/pull/37 is merged
+	ipp.AttributeTagMapping["printer-is-temporary"] = ipp.TagBoolean
+	r.OperationAttributes["printer-is-temporary"] = false
 	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
 		return fmt.Errorf("Unable to add or modify printer: %w", err)
 	}
@@ -224,7 +241,31 @@ func (c *Client) AddOrModify(p *Printer) error {
 	return nil
 }
 
-//Delete deletes the Printer or returns an error if one occurred
+// CreateIPPEverywhere creates the Printer as an IPP Everywhere printer or returns an error if one occurred
+func (c *Client) CreateIPPEverywhere(p *Printer) error {
+	// https://github.com/apple/cups/issues/5919
+	// first create local printer, then update to make permanent
+	r := ipp.NewRequest(ipp.OperationCupsCreateLocalPrinter, rand.Int31())
+	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
+	r.PrinterAttributes[ipp.AttributePrinterName] = p.ID
+	r.PrinterAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
+	r.PrinterAttributes[ipp.AttributePrinterInfo] = p.GetName()
+	r.PrinterAttributes[ipp.AttributePrinterLocation] = p.GetLocation()
+	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
+	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
+	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
+		ippErr := new(ipp.IPPError)
+		if errors.As(err, ippErr) && ippErr.Status == ipp.StatusErrorNotPossible {
+			// printer is already created,
+			return nil
+		}
+		return fmt.Errorf("Unable to create local printer: %w", err)
+	}
+
+	return nil
+}
+
+// Delete deletes the Printer or returns an error if one occurred
 func (c *Client) Delete(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsDeletePrinter, rand.Int31())
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
@@ -235,7 +276,7 @@ func (c *Client) Delete(p *Printer) error {
 	return nil
 }
 
-//SetDefault sets the Printer as default or returns an error if one occurred
+// SetDefault sets the Printer as default or returns an error if one occurred
 func (c *Client) SetDefault(p *Printer) error {
 	r := ipp.NewRequest(ipp.OperationCupsSetDefault, rand.Int31())
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
@@ -246,7 +287,7 @@ func (c *Client) SetDefault(p *Printer) error {
 	return nil
 }
 
-//ClearCache clears the clients PPD cache
+// ClearCache clears the clients PPD cache
 func (c *Client) ClearCache() {
 	c.cache = nil
 }
