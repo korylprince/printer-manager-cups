@@ -43,7 +43,7 @@ func (c *Client) adminURL() string {
 
 func (c *Client) getPPDs() (map[string]string, error) {
 	r := ipp.NewRequest(ipp.OperationCupsGetPPDs, rand.Int31())
-	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{"ppd-make-and-model", ipp.AttributePPDName}
+	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePPDMakeAndModel, ipp.AttributePPDName}
 	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to complete IPP request: %w", err)
@@ -52,7 +52,7 @@ func (c *Client) getPPDs() (map[string]string, error) {
 	ppds := make(map[string]string)
 
 	for _, a := range resp.PrinterAttributes {
-		if val := a["ppd-make-and-model"]; len(val) == 1 {
+		if val := a[ipp.AttributePPDMakeAndModel]; len(val) == 1 {
 			if val2 := a[ipp.AttributePPDName]; len(val2) == 1 {
 				ppds[(val[0].Value).(string)] = (val2[0].Value).(string)
 			}
