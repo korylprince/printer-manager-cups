@@ -1,6 +1,7 @@
 package cups
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -8,12 +9,15 @@ import (
 	"os/user"
 	"time"
 
+	"github.com/korylprince/printer-manager-cups/retry"
 	"github.com/phin1x/go-ipp"
 )
 
 const DefaultCacheTimeout = time.Minute * 5
 
 const EverywhereDriver = "everywhere"
+
+var ErrUnsuccessfulPrinterCommunication = errors.New("unsuccessful printer communication")
 
 // Client is a CUPS client that connects over unix sockets
 type Client struct {
@@ -239,28 +243,65 @@ func (c *Client) AddOrModify(p *Printer) error {
 	return nil
 }
 
+var ippEverywhereStrategy = &retry.Strategy{
+	Initial:     1 * time.Second,
+	MaxRetries:  5,
+	MaxDuration: 10 * time.Second,
+	MaxJitter:   time.Second,
+	ShouldRetryFunc: func(err error) error {
+		// treat client-error-not-found as a retriable condition
+		ippErr := new(ipp.IPPError)
+		if errors.As(err, ippErr) && ippErr.Status == ipp.StatusErrorNotFound {
+			return nil
+		}
+		return err
+	},
+}
+
 // CreateIPPEverywhere creates the Printer as an IPP Everywhere printer or returns an error if one occurred
 func (c *Client) CreateIPPEverywhere(p *Printer) error {
 	// https://github.com/apple/cups/issues/5919
-	// first create local printer, then update to make permanent
+	// try creating local printer, which is asynchronous
 	r := ipp.NewRequest(ipp.OperationCupsCreateLocalPrinter, rand.Int31())
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	r.PrinterAttributes[ipp.AttributePrinterName] = p.ID
 	r.PrinterAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
 	r.PrinterAttributes[ipp.AttributePrinterInfo] = p.GetName()
 	r.PrinterAttributes[ipp.AttributePrinterLocation] = p.GetLocation()
-	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
-	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
+	r.PrinterAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
+	r.PrinterAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
 	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
 		ippErr := new(ipp.IPPError)
 		if errors.As(err, ippErr) && ippErr.Status == ipp.StatusErrorNotPossible {
-			// printer is already created,
+			// printer is already created, we're done
 			return nil
 		}
 		return fmt.Errorf("Unable to create local printer: %w", err)
 	}
 
-	return nil
+	// get printer PPD to verify printer is created
+	buf := new(bytes.Buffer)
+	retry.DefaultStrategy.Retry(func() error {
+		r := ipp.NewRequest(ipp.OperationCupsGetPpd, rand.Int31())
+		r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
+		if _, err := c.client.SendRequest(c.adminURL(), r, buf); err != nil {
+			return fmt.Errorf("Unable to get PPD: %w", err)
+		}
+
+		return nil
+	})
+
+	// check if PPD was returned and if it was, then cups was able to talk to the printer successfully
+	if buf.Len() > 0 {
+		return nil
+	}
+
+	// delete the printer since it doesn't have an IPP Everywhere PPD
+	if err := c.Delete(p); err != nil {
+		return fmt.Errorf("error while deleting printer: %v, original error: %w", err, ErrUnsuccessfulPrinterCommunication)
+	}
+
+	return ErrUnsuccessfulPrinterCommunication
 }
 
 // Delete deletes the Printer or returns an error if one occurred
