@@ -1,7 +1,6 @@
 package cups
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -244,9 +243,9 @@ func (c *Client) AddOrModify(p *Printer) error {
 }
 
 var ippEverywhereStrategy = &retry.Strategy{
-	Initial:     1 * time.Second,
+	Initial:     2 * time.Second,
 	MaxRetries:  5,
-	MaxDuration: 10 * time.Second,
+	MaxDuration: 30 * time.Second,
 	MaxJitter:   time.Second,
 	ShouldRetryFunc: func(err error) error {
 		// treat client-error-not-found as a retriable condition
@@ -276,32 +275,30 @@ func (c *Client) CreateIPPEverywhere(p *Printer) error {
 			// printer is already created, we're done
 			return nil
 		}
-		return fmt.Errorf("Unable to create local printer: %w", err)
+		return fmt.Errorf("could not create local printer: %w", err)
 	}
 
 	// get printer PPD to verify printer is created
-	buf := new(bytes.Buffer)
-	retry.DefaultStrategy.Retry(func() error {
+	if err := ippEverywhereStrategy.Retry(func() error {
 		r := ipp.NewRequest(ipp.OperationCupsGetPpd, rand.Int31())
 		r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
-		if _, err := c.client.SendRequest(c.adminURL(), r, buf); err != nil {
-			return fmt.Errorf("Unable to get PPD: %w", err)
+		if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
+			return err
 		}
-
 		return nil
-	})
-
-	// check if PPD was returned and if it was, then cups was able to talk to the printer successfully
-	if buf.Len() > 0 {
-		return nil
+	}); err != nil {
+		ippErr := new(ipp.IPPError)
+		if !errors.As(err, ippErr) || ippErr.Status != ipp.StatusErrorNotFound {
+			return fmt.Errorf("could not check printer status: %w", err)
+		}
+		// delete the printer since it doesn't have an IPP Everywhere PPD
+		if err := c.Delete(p); err != nil {
+			return fmt.Errorf("error while deleting printer: %v, original error: %w", err, ErrUnsuccessfulPrinterCommunication)
+		}
+		return ErrUnsuccessfulPrinterCommunication
 	}
 
-	// delete the printer since it doesn't have an IPP Everywhere PPD
-	if err := c.Delete(p); err != nil {
-		return fmt.Errorf("error while deleting printer: %v, original error: %w", err, ErrUnsuccessfulPrinterCommunication)
-	}
-
-	return ErrUnsuccessfulPrinterCommunication
+	return nil
 }
 
 // Delete deletes the Printer or returns an error if one occurred
