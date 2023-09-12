@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 
 	"github.com/korylprince/printer-manager-cups/cups"
 )
 
 const apiPath = "/users/%s/printers"
+
+var idRegexp = regexp.MustCompile("[^0-9a-zA-Z]")
 
 func GetPrinters(apiBase string, usernames []string) ([]*cups.Printer, error) {
 	printerSet := make(map[string]*cups.Printer)
@@ -42,6 +45,8 @@ func GetPrinters(apiBase string, usernames []string) ([]*cups.Printer, error) {
 	// coalesce printers
 	printers := make([]*cups.Printer, 0, len(printerSet))
 	for _, p := range printerSet {
+		// sanitize id to be compatible with cups sanitation (particularly for CUPS-Create-Local-Printer
+		p.ID = idRegexp.ReplaceAllString(p.ID, "")
 		printers = append(printers, p)
 	}
 
