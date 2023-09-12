@@ -217,9 +217,7 @@ func (c *Client) AddOrModify(p *Printer) error {
 	r.OperationAttributes[ipp.AttributePrinterLocation] = p.GetLocation()
 	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
 	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
-	// FIXME: update once https://github.com/phin1x/go-ipp/pull/37 is merged
-	ipp.AttributeTagMapping["printer-is-temporary"] = ipp.TagBoolean
-	r.OperationAttributes["printer-is-temporary"] = false
+	r.OperationAttributes[ipp.AttributePrinterIsTemporary] = false
 	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
 		return fmt.Errorf("Unable to add or modify printer: %w", err)
 	}

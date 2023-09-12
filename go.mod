@@ -13,7 +13,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/klauspost/compress v1.16.7 // indirect
-	github.com/phin1x/go-ipp v1.6.1
+	github.com/phin1x/go-ipp v1.6.2-0.20230912085407-24e049b4d9fc
 	golang.org/x/net v0.14.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 )
