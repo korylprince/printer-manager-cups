@@ -18,6 +18,8 @@ const EverywhereDriver = "everywhere"
 
 var ErrUnsuccessfulPrinterCommunication = errors.New("unsuccessful printer communication")
 
+const cupsNaturalLanguage = "en"
+
 // Client is a CUPS client that connects over unix sockets
 type Client struct {
 	client       *ipp.IPPClient
@@ -46,10 +48,23 @@ func (c *Client) adminURL() string {
 	return c.adapter.GetHttpUri("admin", "")
 }
 
+func (c *Client) serverURL() string {
+	return c.adapter.GetHttpUri("", nil)
+}
+
+// newCUPSRequest creates an IPP request with the natural language value CUPS
+// accepts for local scheduler operations. Golden Gate rejects the dependency's
+// legacy default of "en-US".
+func newCUPSRequest(operation int16) *ipp.Request {
+	r := ipp.NewRequest(operation, rand.Int31())
+	r.OperationAttributes[ipp.AttributeNaturalLanguage] = cupsNaturalLanguage
+	return r
+}
+
 func (c *Client) getPPDs() (map[string]string, error) {
-	r := ipp.NewRequest(ipp.OperationCupsGetPPDs, rand.Int31())
+	r := newCUPSRequest(ipp.OperationCupsGetPPDs)
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePPDMakeAndModel, ipp.AttributePPDName}
-	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
+	resp, err := c.client.SendRequest(c.serverURL(), r, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to complete IPP request: %w", err)
 	}
@@ -85,9 +100,9 @@ func (c *Client) GetPPDs() (map[string]string, error) {
 
 // GetDefault returns the id of the default Printer or an error if one occurred
 func (c *Client) GetDefault() (string, error) {
-	r := ipp.NewRequest(ipp.OperationCupsGetDefault, rand.Int31())
+	r := newCUPSRequest(ipp.OperationCupsGetDefault)
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName}
-	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
+	resp, err := c.client.SendRequest(c.serverURL(), r, nil)
 	if err != nil {
 		return "", fmt.Errorf("Unable to complete IPP request: %w", err)
 	}
@@ -141,9 +156,9 @@ func (p *Printer) GetLocation() string {
 
 // GetPrinters returns all the installed Printers or an error if one occurred
 func (c *Client) GetPrinters() ([]*Printer, error) {
-	r := ipp.NewRequest(ipp.OperationCupsGetPrinters, rand.Int31())
+	r := newCUPSRequest(ipp.OperationCupsGetPrinters)
 	r.OperationAttributes[ipp.AttributeRequestedAttributes] = []string{ipp.AttributePrinterName, ipp.AttributeDeviceURI, ipp.AttributePrinterInfo, ipp.AttributePrinterLocation}
-	resp, err := c.client.SendRequest(c.adminURL(), r, nil)
+	resp, err := c.client.SendRequest(c.serverURL(), r, nil)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to complete IPP request: %w", err)
 	}
@@ -210,17 +225,7 @@ func (c *Client) AddOrModify(p *Printer) error {
 		}
 	}
 
-	r := ipp.NewRequest(ipp.OperationCupsAddModifyPrinter, rand.Int31())
-	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
-	r.OperationAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
-	if ppd != "" {
-		r.OperationAttributes[ipp.AttributePPDName] = ppd
-	}
-	r.OperationAttributes[ipp.AttributePrinterInfo] = p.GetName()
-	r.OperationAttributes[ipp.AttributePrinterLocation] = p.GetLocation()
-	r.OperationAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
-	r.OperationAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
-	r.OperationAttributes[ipp.AttributePrinterIsTemporary] = false
+	r := c.addModifyRequest(p, ppd)
 	if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
 		return fmt.Errorf("Unable to add or modify printer: %w", err)
 	}
@@ -242,6 +247,24 @@ func (c *Client) AddOrModify(p *Printer) error {
 	return nil
 }
 
+// addModifyRequest creates a CUPS-Add-Modify-Printer request. Per the IPP
+// specification, printer-uri is an operation attribute; the printer settings
+// themselves must be in the printer-attributes group.
+func (c *Client) addModifyRequest(p *Printer, ppd string) *ipp.Request {
+	r := newCUPSRequest(ipp.OperationCupsAddModifyPrinter)
+	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
+	r.PrinterAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
+	if ppd != "" {
+		r.PrinterAttributes[ipp.AttributePPDName] = ppd
+	}
+	r.PrinterAttributes[ipp.AttributePrinterInfo] = p.GetName()
+	r.PrinterAttributes[ipp.AttributePrinterLocation] = p.GetLocation()
+	r.PrinterAttributes[ipp.AttributePrinterIsAcceptingJobs] = true
+	r.PrinterAttributes[ipp.AttributePrinterState] = ipp.PrinterStateIdle
+	r.PrinterAttributes[ipp.AttributePrinterIsTemporary] = false
+	return r
+}
+
 var ippEverywhereStrategy = &retry.Strategy{
 	Initial:     2 * time.Second,
 	MaxRetries:  5,
@@ -261,7 +284,7 @@ var ippEverywhereStrategy = &retry.Strategy{
 func (c *Client) CreateIPPEverywhere(p *Printer) error {
 	// https://github.com/apple/cups/issues/5919
 	// try creating local printer, which is asynchronous
-	r := ipp.NewRequest(ipp.OperationCupsCreateLocalPrinter, rand.Int31())
+	r := newCUPSRequest(ipp.OperationCupsCreateLocalPrinter)
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	r.PrinterAttributes[ipp.AttributePrinterName] = p.ID
 	r.PrinterAttributes[ipp.AttributeDeviceURI] = fmt.Sprintf(p.URITemplate, p.Hostname)
@@ -280,9 +303,9 @@ func (c *Client) CreateIPPEverywhere(p *Printer) error {
 
 	// get printer PPD to verify printer is created
 	if err := ippEverywhereStrategy.Retry(func() error {
-		r := ipp.NewRequest(ipp.OperationCupsGetPpd, rand.Int31())
+		r := newCUPSRequest(ipp.OperationCupsGetPpd)
 		r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
-		if _, err := c.client.SendRequest(c.adminURL(), r, nil); err != nil {
+		if _, err := c.client.SendRequest(c.serverURL(), r, nil); err != nil {
 			return err
 		}
 		return nil
@@ -303,7 +326,7 @@ func (c *Client) CreateIPPEverywhere(p *Printer) error {
 
 // Delete deletes the Printer or returns an error if one occurred
 func (c *Client) Delete(p *Printer) error {
-	r := ipp.NewRequest(ipp.OperationCupsDeletePrinter, rand.Int31())
+	r := newCUPSRequest(ipp.OperationCupsDeletePrinter)
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	_, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
@@ -314,7 +337,7 @@ func (c *Client) Delete(p *Printer) error {
 
 // SetDefault sets the Printer as default or returns an error if one occurred
 func (c *Client) SetDefault(p *Printer) error {
-	r := ipp.NewRequest(ipp.OperationCupsSetDefault, rand.Int31())
+	r := newCUPSRequest(ipp.OperationCupsSetDefault)
 	r.OperationAttributes[ipp.AttributePrinterURI] = c.adapter.GetHttpUri("printers", p.ID)
 	_, err := c.client.SendRequest(c.adminURL(), r, nil)
 	if err != nil {
